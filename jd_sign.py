@@ -136,7 +136,7 @@ def jd_bean_sign2():
 
     try:
         res = requests.post(url, headers=headers, data=payload, timeout=10)
-        print(res.text)
+        #print(res.text)
 
         data = res.json()
         code = str(data.get("code"))
@@ -169,9 +169,104 @@ def jd_bean_sign2():
                 print("❌ 刮卡失败:", display_msg)
                 send("京东签到失败", display_msg)
 
+            # 休息2秒，避免请求过快
+            time.sleep(2)
+            #获取签到奖励
+            jd_bean_reward_node();
+
     except Exception as e:
         print("❌ 请求异常:", e)
         send("京东签到失败",e)
+
+def jd_bean_reward_node():
+    print("\n🎁 [节点奖励] 开始领取刮卡节点奖励...")
+
+    url = "https://api.m.jd.com/api"
+
+    payload = {
+        "appid": "plus_business",
+        "functionId": "bff_rightsCenter_interaction",
+        "body": json.dumps({
+            "scene": "commonDoInteractiveAssignment",
+            "activityCode": "beanRewardNode",
+            "businessScenario": "jingDouCenter",
+            "assignmentId": "1",
+            "actionType": "0",
+            "itemId": ""
+        }),
+        "loginType": "2",
+        "xAPIClientLanguage": "zh_CN"
+    }
+
+    headers = {
+        "Accept": "*/*",
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Origin": "https://pro.m.jd.com",
+        "Referer": "https://pro.m.jd.com/",
+        "User-Agent": "jdapp;android;13.8.6",
+        "Cookie": cookie,
+        "X-Requested-With": "com.jingdong.app.mall"
+    }
+
+    try:
+        res = requests.post(url, headers=headers, data=payload, timeout=10)
+        print(res.text)
+
+        # ===== JSON 防炸 =====
+        try:
+            data = res.json()
+        except Exception:
+            print("❌ rewardNode 非JSON返回")
+            send("京东节点奖励失败", res.text[:200])
+            return
+
+        code = str(data.get("code"))
+        msg = data.get("displayMsg") or data.get("msg") or "未知返回"
+
+        # ===== 风控判断 =====
+        if "火爆" in msg or "稍后再试" in msg:
+            print(f"⚠️ 可能风控: {msg}")
+            send("京东节点奖励风控", msg)
+            return
+
+        if code != "0":
+            print(f"ℹ️ 节点奖励状态: {msg}")
+            return
+
+        print(f"✅ 节点接口成功: {msg}")
+
+        # ===== 奖励解析（核心）=====
+        rs = data.get("rs", {})
+        rewards_info = rs.get("rewardsInfo", {})
+        success_rewards = rewards_info.get("successRewards")
+
+        got_reward = False
+
+        if isinstance(success_rewards, dict):
+            for reward_group in success_rewards.values():
+
+                # ⭐ list 结构（最常见）
+                if isinstance(reward_group, list):
+                    for reward in reward_group:
+                        reward_name = reward.get("rewardName") or reward.get("prizeName") or "奖励"
+                        quantity = reward.get("quantity", "")
+                        print(f"🎉 节点获得: {reward_name} x {quantity}")
+                        got_reward = True
+
+                # ⭐ dict 结构（少见）
+                elif isinstance(reward_group, dict):
+                    reward_name = reward_group.get("rewardName") or reward_group.get("prizeName") or "奖励"
+                    quantity = reward_group.get("quantity", "")
+                    print(f"🎉 节点获得: {reward_name} x {quantity}")
+                    got_reward = True
+
+        # ===== 无奖励提示 =====
+        if not got_reward:
+            print("ℹ️ 节点无奖励（可能已领 / 未触发）")
+
+    except Exception as e:
+        print("❌ 节点奖励异常:", e)
+        send("京东节点奖励异常", str(e))
 
 # ==========================================
 # 5. 主程序入口
@@ -179,9 +274,11 @@ def jd_bean_sign2():
 if __name__ == "__main__":
     # 京东秒杀
     jd_bean_sign()
-    
+
     # 休息2秒，避免请求过快
     time.sleep(2)
-    
+
     # 京东刮卡
     jd_bean_sign2()
+
+    #jd_bean_reward_node()
